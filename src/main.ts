@@ -1,4 +1,5 @@
-import { Editor, MarkdownView, Plugin, PluginSettingTab, App, Setting } from "obsidian";
+import { Plugin, PluginSettingTab, App, Setting } from "obsidian";
+import { EditorState, Transaction } from "@codemirror/state";
 
 interface TodoTrailSettings {
   completedHeading: string;
@@ -250,9 +251,32 @@ export default class TodoTrailPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
 
-    this.registerEvent(
-      this.app.workspace.on("editor-change", (editor: Editor, info: MarkdownView) => {
-        this.handleEditorChange(editor);
+    this.registerEditorExtension(
+      EditorState.transactionFilter.of((tr: Transaction) => {
+        if (this.processing || !tr.docChanged) return tr;
+
+        let checkedTaskLine = -1;
+        tr.changes.iterChanges((fromA, toA, fromB, toB) => {
+          if (checkedTaskLine !== -1) return;
+          const newLine = tr.newDoc.lineAt(fromB);
+          const oldLine = tr.startState.doc.lineAt(fromA);
+          if (isCheckedTask(newLine.text) && !isCheckedTask(oldLine.text)) {
+            checkedTaskLine = newLine.number - 1; // CM6 lines are 1-based
+          }
+        });
+
+        if (checkedTaskLine === -1) return tr;
+
+        const fullText = tr.newDoc.toString();
+        const result = moveCheckedTask(fullText, checkedTaskLine, this.settings.completedHeading);
+        if (result === null) return tr;
+
+        this.processing = true;
+        try {
+          return [{ changes: { from: 0, to: tr.startState.doc.length, insert: result } }];
+        } finally {
+          this.processing = false;
+        }
       })
     );
 
@@ -265,29 +289,6 @@ export default class TodoTrailPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
-  }
-
-  handleEditorChange(editor: Editor) {
-    if (this.processing) return;
-
-    const cursor = editor.getCursor();
-    const fullText = editor.getValue();
-    const result = moveCheckedTask(fullText, cursor.line, this.settings.completedHeading);
-
-    if (result !== null) {
-      this.processing = true;
-      try {
-        const cursorBefore = editor.getCursor();
-        editor.setValue(result);
-        const newLineCount = result.split("\n").length;
-        editor.setCursor({
-          line: Math.min(cursorBefore.line, newLineCount - 1),
-          ch: 0,
-        });
-      } finally {
-        this.processing = false;
-      }
-    }
   }
 }
 
