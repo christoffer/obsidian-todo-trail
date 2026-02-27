@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-todo-trail",
+  "name": "Todo Trail",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Automatically moves checked tasks to a Completed section, preserving parent hierarchy.",
+  "author": "Christoffer",
+  "isDesktopOnly": false
+}
